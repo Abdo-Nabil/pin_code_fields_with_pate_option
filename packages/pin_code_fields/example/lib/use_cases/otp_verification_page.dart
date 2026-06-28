@@ -271,6 +271,10 @@ class _OtpVerificationPageState extends State<OtpVerificationPage>
                               child: Column(
                                 children: [
                                   MaterialPinField(
+                                    onLongPress: () {
+                                      debugPrint(
+                                          '################ onLongPress');
+                                    },
                                     length: 6,
                                     pinController: _pinController,
                                     autoFocus: true,

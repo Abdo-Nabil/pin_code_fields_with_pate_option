@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -411,6 +412,7 @@ class _PinInputState extends State<PinInput>
   int _previousLength = 0;
   final Set<int> _justEnteredIndices = {};
   final Set<int> _justRemovedIndices = {};
+  Timer? _longPressTimer;
 
   // Blink effect
   Timer? _blinkTimer;
@@ -543,6 +545,7 @@ class _PinInputState extends State<PinInput>
   void dispose() {
     _detachControllerListeners();
     _blinkTimer?.cancel();
+    _longPressTimer?.cancel();
     _textController.removeListener(_onTextChanged);
     _focusNode.removeListener(_onFocusChanged);
     disposePinController();
@@ -653,6 +656,33 @@ class _PinInputState extends State<PinInput>
       return _buildDeferredPasteMenu;
     }
     return widget.contextMenuBuilder;
+  }
+
+  void _handleFieldLongPress() {
+    if (widget.enabled && !_focusNode.hasFocus && !widget.readOnly) {
+      _requestFocusSafely();
+    }
+    widget.onLongPress?.call();
+  }
+
+  void _startLongPressTimer(PointerDownEvent event) {
+    _longPressTimer?.cancel();
+
+    final isPrimaryPointer = event.buttons == kPrimaryButton;
+    final supportsLongPress = event.kind == PointerDeviceKind.touch ||
+        event.kind == PointerDeviceKind.stylus ||
+        event.kind == PointerDeviceKind.unknown;
+
+    if (!widget.enabled || !isPrimaryPointer || !supportsLongPress) {
+      return;
+    }
+
+    _longPressTimer = Timer(kLongPressTimeout, _handleFieldLongPress);
+  }
+
+  void _cancelLongPressTimer([PointerEvent? _]) {
+    _longPressTimer?.cancel();
+    _longPressTimer = null;
   }
 
   // ------------------------------------------------------------------
@@ -863,56 +893,59 @@ class _PinInputState extends State<PinInput>
     Widget content = MouseRegion(
       cursor: widget.mouseCursor ??
           (widget.enabled ? SystemMouseCursors.text : SystemMouseCursors.basic),
-      child: GestureDetector(
-        onTap: () {
-          if (widget.enabled && !_focusNode.hasFocus && !widget.readOnly) {
-            _requestFocusSafely();
-          }
-          widget.onTap?.call();
-        },
-        onLongPress: widget.onLongPress,
-        child: _gestureBuilder.buildGestureDetector(
-          behavior: HitTestBehavior.translucent,
-          child: PinInputScope(
-            cells: cells,
-            obscureText: widget.obscureText,
-            obscuringCharacter: widget.obscuringCharacter,
-            hasFocus: _focusNode.hasFocus,
-            requestFocus: _requestFocusSafely,
-            child: Stack(
-              children: [
-                // User's custom UI
-                widget.builder(context, cells),
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: _startLongPressTimer,
+        onPointerUp: _cancelLongPressTimer,
+        onPointerCancel: _cancelLongPressTimer,
+        onPointerMove: _cancelLongPressTimer,
+        child: GestureDetector(
+          onTap: () {
+            if (widget.enabled && !_focusNode.hasFocus && !widget.readOnly) {
+              _requestFocusSafely();
+            }
+            widget.onTap?.call();
+          },
+          child: _gestureBuilder.buildGestureDetector(
+            behavior: HitTestBehavior.translucent,
+            child: PinInputScope(
+              cells: cells,
+              obscureText: widget.obscureText,
+              obscuringCharacter: widget.obscuringCharacter,
+              hasFocus: _focusNode.hasFocus,
+              requestFocus: _requestFocusSafely,
+              child: Stack(
+                children: [
+                  // User's custom UI
+                  widget.builder(context, cells),
 
-                // Invisible input layer - positioned at top so auto-scroll
-                // shows the full PIN field above the keyboard
-                Positioned(
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  child: InvisibleTextField(
-                    editableTextKey: editableTextKey,
-                    controller: _textController,
-                    focusNode: _focusNode,
-                    length: widget.length,
-                    readOnly: widget.readOnly,
-                    selectionEnabled: selectionEnabled,
-                    selectionControls: selectionControls,
-                    contextMenuBuilder: _resolveContextMenuBuilder(),
-                    keyboardType: widget.keyboardType,
-                    inputFormatters: widget.inputFormatters,
-                    textCapitalization: widget.textCapitalization,
-                    textInputAction: widget.textInputAction,
-                    onSubmitted: widget.onSubmitted,
-                    onEditingComplete: widget.onEditingComplete,
-                    onSelectionChanged: _handleSelectionChanged,
-                    keyboardAppearance: widget.keyboardAppearance,
-                    scrollPadding: widget.scrollPadding,
-                    autofillHints:
-                        widget.enableAutofill ? widget.autofillHints : null,
+                  // Invisible input layer spans the full field so long press
+                  // works from the visible PIN area.
+                  Positioned.fill(
+                    child: InvisibleTextField(
+                      editableTextKey: editableTextKey,
+                      controller: _textController,
+                      focusNode: _focusNode,
+                      length: widget.length,
+                      readOnly: widget.readOnly,
+                      selectionEnabled: selectionEnabled,
+                      selectionControls: selectionControls,
+                      contextMenuBuilder: _resolveContextMenuBuilder(),
+                      keyboardType: widget.keyboardType,
+                      inputFormatters: widget.inputFormatters,
+                      textCapitalization: widget.textCapitalization,
+                      textInputAction: widget.textInputAction,
+                      onSubmitted: widget.onSubmitted,
+                      onEditingComplete: widget.onEditingComplete,
+                      onSelectionChanged: _handleSelectionChanged,
+                      keyboardAppearance: widget.keyboardAppearance,
+                      scrollPadding: widget.scrollPadding,
+                      autofillHints:
+                          widget.enableAutofill ? widget.autofillHints : null,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
